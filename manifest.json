@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "com.b150.walkie",
   "name": "Walkie",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "B150",
   "license": "MIT",
-  "description": "Dictation and meeting status for Walkie \u2014 shows recording, transcribing and meeting state, click to dictate.",
+  "description": "Dictation and meeting status for Walkie — shows recording, transcribing and meeting state. Click opens Walkie; right-click dictates.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "Walkie",
-    "description": "Walkie dictation status",
+    "description": "Walkie status — click to open, right-click to dictate",
     "category": "Audio",
     "allowMultiple": false,
     "defaultSection": "right",

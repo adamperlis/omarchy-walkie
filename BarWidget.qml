@@ -252,8 +252,11 @@ Item {
     cursorShape: Qt.PointingHandCursor
     acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
 
-    // Left  — toggle dictation (start, then stop and transcribe)
-    // Right — open / focus the Walkie window
+    // Left  — open / focus Walkie. A bare left click starting the
+    //         MICROPHONE was too loud an action for the bar's quietest
+    //         gesture (Adam, 2026-09-04); Omarchy's own widgets open
+    //         panels on left click, never fire state changes.
+    // Right — toggle dictation (start, then stop and transcribe)
     // Middle— cancel whatever is running
     onClicked: function (mouse) {
       if (!root.bar || typeof root.bar.run !== "function") return
@@ -261,9 +264,9 @@ Item {
       // recorder that isn't there did nothing and read as broken
       // (Adam, 2026-09-03).
       if (root.offline) { root.bar.run(root.walkieCmd); return }
-      if (mouse.button === Qt.RightButton) root.bar.run(root.walkieCmd)
+      if (mouse.button === Qt.RightButton) root.bar.run(root.walkieCmd + " --toggle-transcription")
       else if (mouse.button === Qt.MiddleButton) root.bar.run(root.walkieCmd + " --cancel")
-      else root.bar.run(root.walkieCmd + " --toggle-transcription")
+      else root.bar.run(root.walkieCmd)
     }
 
     onEntered: if (root.bar && typeof root.bar.showTooltip === "function") root.bar.showTooltip(root, root.tip)

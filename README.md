@@ -37,8 +37,8 @@ omarchy plugin remove com.b150.walkie
 
 | Action | Result |
 | --- | --- |
-| Left click | Toggle dictation (start, then stop and transcribe) |
-| Right click | Open / focus the Walkie window |
+| Left click | Open / focus the Walkie window |
+| Right click | Toggle dictation (start, then stop and transcribe) |
 | Middle click | Cancel the current recording |
 
 While recording, the mark breathes slowly. Idle recedes; a dead or missing
