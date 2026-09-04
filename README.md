@@ -27,6 +27,12 @@ Installing from git and from the app are exclusive: both register the id
 `com.b150.walkie`, and Omarchy refuses a second claim. If you installed from
 git, updates ride `omarchy plugin update`; the app leaves git checkouts alone.
 
+Remove it any time with:
+
+```sh
+omarchy plugin remove com.b150.walkie
+```
+
 ## What it does
 
 | Action | Result |
