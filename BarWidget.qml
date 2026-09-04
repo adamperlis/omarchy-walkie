@@ -46,17 +46,15 @@ Item {
   readonly property int fontSize: Number(setting("fontSize", 14))
 
   // ── brand mark ────────────────────────────────────────────────────────
-  // The bar draws the HUB of the Walkie dot-globe: the centre dot and its
-  // inner ring of six. The full mark is ~131 dots — at the bar's 16px it
-  // reduced to noise however few rings were kept (field-verified on a
-  // default-size vertical bar, Adam 2026-09-04), and a painted Canvas
-  // blurred on scaled displays besides. Seven scene-graph circles stay
-  // crisp at any DPR, tint with the theme, and read as Walkie at a glance.
-  // Deliberately the brand mark, not a Nerd Font mic: Omarchy's Voxtype
-  // already puts a mic in the bar (Adam, 2026-09-03/04).
-  // Geometry in 16ths of the box: ring radius 5.2, dot radius 1.6 — the
-  // farthest extent is 6.8/8, so the recording breath (scale 1.15) still
-  // never touches the edge.
+  // The bar draws the first TWO rings of the Walkie dot-globe: centre dot,
+  // six, then twelve — 19 dots. The 7-dot hub didn't carry the essence of
+  // the mark, and the full ~131 dots reduce to noise at bar sizes (both
+  // field-verified, Adam 2026-09-04). Scene-graph circles stay crisp at
+  // any DPR and tint with the theme. Deliberately the brand mark, not a
+  // Nerd Font mic: Omarchy's Voxtype already puts a mic in the bar.
+  // Geometry in 16ths of the box: rings at 3.1 and 5.9, dot radius 1.05 —
+  // extent 6.95/8, so the recording breath (scale 1.15) stays inside the
+  // box. Density needs ≥18px to breathe, hence the fontSize 16 default.
 
   // U+F036 followed by the letter "d". Only used until the first status line
   // arrives and when the stream dies; every other glyph comes from the
@@ -191,7 +189,7 @@ Item {
 
       readonly property color fill: root.bar ? root.bar.foreground : "white"
       readonly property real unit: width / 16.0
-      readonly property real dot: 3.2 * unit
+      readonly property real dot: 2.1 * unit
 
       Rectangle {
         anchors.centerIn: parent
@@ -206,8 +204,22 @@ Item {
         delegate: Rectangle {
           required property int index
           readonly property real angle: -Math.PI / 2 + index * Math.PI / 3
-          x: icon.width / 2 + 5.2 * icon.unit * Math.cos(angle) - width / 2
-          y: icon.height / 2 + 5.2 * icon.unit * Math.sin(angle) - height / 2
+          x: icon.width / 2 + 3.1 * icon.unit * Math.cos(angle) - width / 2
+          y: icon.height / 2 + 3.1 * icon.unit * Math.sin(angle) - height / 2
+          width: icon.dot
+          height: icon.dot
+          radius: width / 2
+          color: icon.fill
+          antialiasing: true
+        }
+      }
+      Repeater {
+        model: 12
+        delegate: Rectangle {
+          required property int index
+          readonly property real angle: -Math.PI / 2 + index * Math.PI / 6
+          x: icon.width / 2 + 5.9 * icon.unit * Math.cos(angle) - width / 2
+          y: icon.height / 2 + 5.9 * icon.unit * Math.sin(angle) - height / 2
           width: icon.dot
           height: icon.dot
           radius: width / 2
