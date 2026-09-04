@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "id": "com.b150.walkie",
+  "name": "Walkie",
+  "version": "1.1.0",
+  "author": "B150",
+  "license": "MIT",
+  "description": "Dictation and meeting status for Walkie \u2014 shows recording, transcribing and meeting state, click to dictate.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Walkie",
+    "description": "Walkie dictation status",
+    "category": "Audio",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "command": "walkie",
+      "hideWhenIdle": false,
+      "showLabel": false,
+      "fontFamily": "",
+      "fontSize": 14
+    },
+    "schema": [
+      {
+        "key": "command",
+        "type": "string",
+        "label": "Walkie command",
+        "description": "Executable used for status and actions. Use an absolute path for an AppImage install.",
+        "defaultValue": "walkie"
+      },
+      {
+        "key": "hideWhenIdle",
+        "type": "boolean",
+        "label": "Hide when idle",
+        "description": "Only occupy space in the bar while Walkie is recording or working.",
+        "defaultValue": false
+      },
+      {
+        "key": "showLabel",
+        "type": "boolean",
+        "label": "Show state label",
+        "description": "Print the state name next to the icon.",
+        "defaultValue": false
+      },
+      {
+        "key": "fontFamily",
+        "type": "string",
+        "label": "Font family",
+        "description": "Overrides the bar font used for the icon glyph. Leave empty to inherit the bar's font.",
+        "defaultValue": ""
+      },
+      {
+        "key": "fontSize",
+        "type": "integer",
+        "label": "Font size",
+        "description": "Icon size in pixels.",
+        "defaultValue": 14,
+        "min": 8,
+        "max": 48
+      }
+    ]
+  }
+}
