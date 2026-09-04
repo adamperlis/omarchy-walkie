@@ -8,15 +8,27 @@ click starts dictation without touching the keyboard.
 ## Requires the Walkie app
 
 The widget is a status display and remote control for the Walkie desktop app —
-install that first:
+install that first. On Arch/Omarchy, add Walkie's package repository to
+`/etc/pacman.conf`:
 
-```sh
-curl -fsSL https://trywalkie.com/install.sh | sh
+```ini
+[walkie]
+SigLevel = Optional TrustAll
+Server = https://b150.s3.us-east-1.amazonaws.com/walkie/arch/$arch
 ```
 
-The installer adds Walkie's pacman repository, and **the app ships this widget
-and offers to add it to your bar on first launch** — most people never need
-this repo. It exists so the widget can also be browsed, read and installed the
+then install with your package manager:
+
+```sh
+sudo pacman -Syu walkie-bin
+```
+
+(There is also a guided installer at
+[trywalkie.com/docs/getting-started/walkie-on-linux](https://trywalkie.com/docs/getting-started/walkie-on-linux)
+— read it before running anything, as with any installer.)
+
+**The app ships this widget and offers to add it to your bar on first
+launch** — most people never need this repo. It exists so the widget can also be browsed, read and installed the
 Omarchy way:
 
 ```sh
