@@ -8,12 +8,23 @@ click starts dictation without touching the keyboard.
 ## Requires the Walkie app
 
 The widget is a status display and remote control for the Walkie desktop app —
-install that first. On Arch/Omarchy, add Walkie's package repository to
-`/etc/pacman.conf`:
+install that first. On Arch/Omarchy, trust Walkie's package signing key
+(fingerprint `7D83A6322DEC79B94A9BE087D51158E4F15B9894` — verify what you
+import matches it):
+
+```sh
+curl -fsSL https://b150.s3.us-east-1.amazonaws.com/walkie/arch/x86_64/walkie-signing-key.asc -o /tmp/walkie-key.asc
+sudo pacman-key --add /tmp/walkie-key.asc
+sudo pacman-key --lsign-key 7D83A6322DEC79B94A9BE087D51158E4F15B9894
+```
+
+then add Walkie's package repository to `/etc/pacman.conf`. Every package and
+the repository database are signed, so pacman verifies everything it installs
+from here:
 
 ```ini
 [walkie]
-SigLevel = Optional TrustAll
+SigLevel = Required
 Server = https://b150.s3.us-east-1.amazonaws.com/walkie/arch/$arch
 ```
 
