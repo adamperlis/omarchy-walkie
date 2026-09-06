@@ -16,6 +16,7 @@
 // One instance exists per monitor, so one status process runs per screen.
 
 import QtQuick
+import Quickshell
 import Quickshell.Io
 
 Item {
@@ -46,15 +47,15 @@ Item {
   readonly property int fontSize: Number(setting("fontSize", 14))
 
   // ── brand mark ────────────────────────────────────────────────────────
-  // The bar draws the first TWO rings of the Walkie dot-globe: centre dot,
-  // six, then twelve — 19 dots. The 7-dot hub didn't carry the essence of
-  // the mark, and the full ~131 dots reduce to noise at bar sizes (both
-  // field-verified, Adam 2026-09-04). Scene-graph circles stay crisp at
-  // any DPR and tint with the theme. Deliberately the brand mark, not a
-  // Nerd Font mic: Omarchy's Voxtype already puts a mic in the bar.
-  // Geometry in 16ths of the box: rings at 3.1 and 5.9, dot radius 1.05 —
-  // extent 6.95/8, so the recording breath (scale 1.15) stays inside the
-  // box. Density needs ≥18px to breathe, hence the fontSize 16 default.
+  // The bar draws THREE rings of the Walkie dot-globe: centre, 6, 12, 18 —
+  // 37 dots, the tier between the old sparse bar glyph and the 61-dot app
+  // icon, so bar and launcher read as the same mark (Adam, 2026-09-06:
+  // "split the difference"). The full 61 dots fuse to grey at bar sizes
+  // (render-verified); 37 resolves from 18px up, hence the new default.
+  // Scene-graph circles stay crisp at any DPR and tint with the theme.
+  // Geometry in 16ths of the box: rings at 2.05 / 4.1 / 6.1 (equal ~2.15u
+  // circumferential pitch, matching the real mark), dot radius 0.8 —
+  // extent 6.9/8, so the recording breath (scale 1.15) stays inside.
 
   // U+F036 followed by the letter "d". Only used until the first status line
   // arrives and when the stream dies; every other glyph comes from the
@@ -189,7 +190,7 @@ Item {
 
       readonly property color fill: root.bar ? root.bar.foreground : "white"
       readonly property real unit: width / 16.0
-      readonly property real dot: 2.1 * unit
+      readonly property real dot: 1.6 * unit
 
       Rectangle {
         anchors.centerIn: parent
@@ -204,8 +205,8 @@ Item {
         delegate: Rectangle {
           required property int index
           readonly property real angle: -Math.PI / 2 + index * Math.PI / 3
-          x: icon.width / 2 + 3.1 * icon.unit * Math.cos(angle) - width / 2
-          y: icon.height / 2 + 3.1 * icon.unit * Math.sin(angle) - height / 2
+          x: icon.width / 2 + 2.05 * icon.unit * Math.cos(angle) - width / 2
+          y: icon.height / 2 + 2.05 * icon.unit * Math.sin(angle) - height / 2
           width: icon.dot
           height: icon.dot
           radius: width / 2
@@ -218,8 +219,22 @@ Item {
         delegate: Rectangle {
           required property int index
           readonly property real angle: -Math.PI / 2 + index * Math.PI / 6
-          x: icon.width / 2 + 5.9 * icon.unit * Math.cos(angle) - width / 2
-          y: icon.height / 2 + 5.9 * icon.unit * Math.sin(angle) - height / 2
+          x: icon.width / 2 + 4.1 * icon.unit * Math.cos(angle) - width / 2
+          y: icon.height / 2 + 4.1 * icon.unit * Math.sin(angle) - height / 2
+          width: icon.dot
+          height: icon.dot
+          radius: width / 2
+          color: icon.fill
+          antialiasing: true
+        }
+      }
+      Repeater {
+        model: 18
+        delegate: Rectangle {
+          required property int index
+          readonly property real angle: -Math.PI / 2 + index * Math.PI / 9
+          x: icon.width / 2 + 6.1 * icon.unit * Math.cos(angle) - width / 2
+          y: icon.height / 2 + 6.1 * icon.unit * Math.sin(angle) - height / 2
           width: icon.dot
           height: icon.dot
           radius: width / 2
@@ -228,8 +243,9 @@ Item {
         }
       }
 
-      // Idle and offline recede; anything happening reads at full strength.
-      opacity: root.active ? 1.0 : (root.offline ? 0.35 : 0.6)
+      // Idle and offline recede; anything happening (or a hover) reads at
+      // full strength.
+      opacity: root.active || mouse.containsMouse ? 1.0 : (root.offline ? 0.35 : 0.6)
       Behavior on opacity { NumberAnimation { duration: 150 } }
 
       // A slow breath while the mic is open — the one state worth noticing
@@ -246,7 +262,9 @@ Item {
     }
 
     Text {
-      visible: root.showLabel && root.phase !== "idle" && !root.offline
+      // Shown on hover too: where the host has no tooltip API, hover
+      // still answers "what is Walkie doing" inline (Adam, 2026-09-06).
+      visible: (root.showLabel || mouse.containsMouse) && root.phase !== "idle" && !root.offline
       anchors.verticalCenter: parent.verticalCenter
       text: root.phase
       color: root.bar ? root.bar.foreground : "white"
@@ -270,15 +288,22 @@ Item {
     //         panels on left click, never fire state changes.
     // Right — toggle dictation (start, then stop and transcribe)
     // Middle— cancel whatever is running
+    // Not every Omarchy shell injects bar.run — where it was missing the
+    // old guard made every click a SILENT no-op (Adam, 2026-09-06).
+    // Quickshell.execDetached is the version-stable fallback; bar.run
+    // stays first preference so host niceties keep working where present.
+    function launch(cmd) {
+      if (root.bar && typeof root.bar.run === "function") root.bar.run(cmd)
+      else Quickshell.execDetached(["bash", "-lc", cmd])
+    }
     onClicked: function (mouse) {
-      if (!root.bar || typeof root.bar.run !== "function") return
       // Walkie not running: every button just launches it. Toggling a
       // recorder that isn't there did nothing and read as broken
       // (Adam, 2026-09-03).
-      if (root.offline) { root.bar.run(root.walkieCmd); return }
-      if (mouse.button === Qt.RightButton) root.bar.run(root.walkieCmd + " --toggle-transcription")
-      else if (mouse.button === Qt.MiddleButton) root.bar.run(root.walkieCmd + " --cancel")
-      else root.bar.run(root.walkieCmd)
+      if (root.offline) { launch(root.walkieCmd); return }
+      if (mouse.button === Qt.RightButton) launch(root.walkieCmd + " --toggle-transcription")
+      else if (mouse.button === Qt.MiddleButton) launch(root.walkieCmd + " --cancel")
+      else launch(root.walkieCmd)
     }
 
     onEntered: if (root.bar && typeof root.bar.showTooltip === "function") root.bar.showTooltip(root, root.tip)

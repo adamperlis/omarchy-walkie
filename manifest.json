@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "com.b150.walkie",
   "name": "Walkie",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "author": "B150",
   "license": "MIT",
   "description": "Dictation and meeting status for Walkie — shows recording, transcribing and meeting state. Click opens Walkie; right-click dictates.",
@@ -23,7 +23,7 @@
       "hideWhenIdle": false,
       "showLabel": false,
       "fontFamily": "",
-      "fontSize": 16
+      "fontSize": 18
     },
     "schema": [
       {
@@ -59,7 +59,7 @@
         "type": "integer",
         "label": "Font size",
         "description": "Icon size in pixels.",
-        "defaultValue": 16,
+        "defaultValue": 18,
         "min": 8,
         "max": 48
       }
