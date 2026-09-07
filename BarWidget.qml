@@ -282,10 +282,10 @@ Item {
     cursorShape: Qt.PointingHandCursor
     acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
 
-    // Left  — open / focus Walkie. A bare left click starting the
-    //         MICROPHONE was too loud an action for the bar's quietest
-    //         gesture (Adam, 2026-09-04); Omarchy's own widgets open
-    //         panels on left click, never fire state changes.
+    // Left  — open the Walkie panel (timer, last dictation with copy,
+    //         actions), like Omarchy's own widgets: left click opens a
+    //         panel, never fires state changes. Shells without the panel
+    //         summon path fall back to opening Walkie itself.
     // Right — toggle dictation (start, then stop and transcribe)
     // Middle— cancel whatever is running
     // Not every Omarchy shell injects bar.run — where it was missing the
@@ -303,7 +303,10 @@ Item {
       if (root.offline) { launch(root.walkieCmd); return }
       if (mouse.button === Qt.RightButton) launch(root.walkieCmd + " --toggle-transcription")
       else if (mouse.button === Qt.MiddleButton) launch(root.walkieCmd + " --cancel")
-      else launch(root.walkieCmd)
+      else Quickshell.execDetached(["bash", "-lc",
+        "omarchy-shell shell toggle com.b150.walkie '" +
+        JSON.stringify({ command: root.walkieCmd }) +
+        "' 2>/dev/null || " + root.walkieCmd])
     }
 
     onEntered: if (root.bar && typeof root.bar.showTooltip === "function") root.bar.showTooltip(root, root.tip)
