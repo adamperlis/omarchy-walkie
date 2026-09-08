@@ -187,7 +187,10 @@ Item {
         x: icon.width/2 + 6.1*icon.unit*Math.cos(a) - width/2
         y: icon.height/2 + 6.1*icon.unit*Math.sin(a) - height/2
         width: icon.dot; height: icon.dot; radius: width/2; color: root.fg; antialiasing: true } }
-      opacity: (root.meetingActive || root.dictating || iconMouse.containsMouse) ? 1.0 : (root.offline ? 0.35 : 0.6)
+      // Match the other bar items: full foreground whenever Walkie is running.
+      // Dim only when Walkie isn't running, so the mark never reads as a
+      // different shade than the clock/battery beside it.
+      opacity: root.offline ? 0.4 : 1.0
       Behavior on opacity { NumberAnimation { duration: 150 } }
       MouseArea {
         id: iconMouse
