@@ -1,315 +1,293 @@
 // Walkie — Omarchy bar widget.
 //
-// Streams `walkie status --watch` (one JSON line per state change) and renders
-// the current phase: idle, recording, analyzing, transcribing, thinking,
-// speaking, error, meeting, or stopped when Walkie is not running.
+// A persistent Walkie mark (click → open Walkie full screen) plus a notch-style
+// status strip that appears only while something is happening:
+//   • dictating      → a blinking orange dot
+//   • meeting record  → a live audio waveform + timer + play/pause
+//   • idle / offline  → just the mark (or nothing, with hideWhenIdle)
 //
-// Deliberately depends on QtQuick + Quickshell.Io ONLY — not on `qs.Ui` or
-// `qs.Commons`. Those modules live inside $OMARCHY_PATH/shell and are versioned
-// with Omarchy, not with this plugin, so importing them would make the widget
-// break on an Omarchy upgrade. Everything below is the documented version-proof
-// baseline from shell/plugins/bar/README.md: an Item with implicitWidth /
-// implicitHeight that reads colors off the injected `bar`.
-//
-// The bar injects three properties AFTER construction (bar, moduleName,
-// settings), so nothing here may assume `bar` is non-null at load time.
-// One instance exists per monitor, so one status process runs per screen.
+// Depends on QtQuick + Quickshell.Io ONLY — never qs.Ui / qs.Commons, which
+// are versioned with Omarchy and would break the widget on a shell upgrade.
+// Phase/offline come from `walkie status --watch`; the richer meeting fields
+// and the waveform come from Walkie's runtime files, read directly.
 
 import QtQuick
+import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 
 Item {
   id: root
 
-  // ── injected by the bar host ───────────────────────────────────────────
   property QtObject bar: null
   property string moduleName: ""
   property var settings: ({})
 
-  // ── config (from the shell.json layout entry) ─────────────────────────
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
     return (value === undefined || value === null) ? fallback : value
   }
   readonly property string walkieCmd: String(setting("command", "walkie"))
   readonly property bool hideWhenIdle: setting("hideWhenIdle", false) === true
-  readonly property bool showLabel: setting("showLabel", false) === true
-  // The bar's own font carries the Nerd Font glyphs; a plugin Loader does not
-  // propagate it, so inherit explicitly and let the user override.
-  // Empty string counts as "unset": `setting()` only falls back on
-  // undefined/null, and the manifest's documented default is "".
   readonly property string fontFamily: {
     var chosen = String(setting("fontFamily", ""))
     if (chosen) return chosen
     return root.bar && root.bar.fontFamily ? root.bar.fontFamily : "monospace"
   }
   readonly property int fontSize: Number(setting("fontSize", 14))
+  readonly property color fg: root.bar ? root.bar.foreground : "white"
+  readonly property color accent: "#fb4501"
+  // Omarchy exposes bar.position; on a left/right (vertical) bar, widgets fall
+  // back to a compact icon-only form (shell/plugins/bar/README.md).
+  readonly property bool vertical: root.bar
+    && (String(root.bar.position) === "left" || String(root.bar.position) === "right")
 
-  // ── brand mark ────────────────────────────────────────────────────────
-  // The bar draws THREE rings of the Walkie dot-globe: centre, 6, 12, 18 —
-  // 37 dots, the tier between the old sparse bar glyph and the 61-dot app
-  // icon, so bar and launcher read as the same mark (Adam, 2026-09-06:
-  // "split the difference"). The full 61 dots fuse to grey at bar sizes
-  // (render-verified); 37 resolves from 18px up, hence the new default.
-  // Scene-graph circles stay crisp at any DPR and tint with the theme.
-  // Geometry in 16ths of the box: rings at 2.05 / 4.1 / 6.1 (equal ~2.15u
-  // circumferential pitch, matching the real mark), dot radius 0.8 —
-  // extent 6.9/8, so the recording breath (scale 1.15) stays inside.
-
-  // U+F036 followed by the letter "d". Only used until the first status line
-  // arrives and when the stream dies; every other glyph comes from the
-  // `text` field of `walkie status`.
-  //
-  // Lower-case initial letter is mandatory: QML rejects property names that
-  // begin with an upper case letter (qqmlirbuilder.cpp), and it is a parse
-  // error that fails the WHOLE component, not just the property — the widget
-  // would silently never load, with nothing in `omarchy plugin validate` to
-  // catch it since that validator does not parse QML.
-  readonly property string micOffGlyph: "\uDB80\uDF6D"
-
+  // ── phase / offline (Waybar-shaped stream) ─────────────────────────────
   property string phase: "stopped"
-  property string glyph: micOffGlyph
-  property string tip: "Walkie"
-
   readonly property bool busy: phase === "analyzing" || phase === "transcribing"
                                || phase === "thinking" || phase === "speaking"
-  readonly property bool active: phase === "recording" || phase === "meeting" || busy
+  readonly property bool dictating: phase === "recording"
   readonly property bool offline: phase === "stopped"
 
-  // Bar.showTooltip() silently drops the request unless the target exposes
-  // `tooltipHovered === true` (Bar.qml targetTooltipHovered). qs.Ui's
-  // WidgetButton provides it; a plain Item must declare it itself.
-  readonly property bool tooltipHovered: visible && mouse.containsMouse
+  // ── richer state from runtime-state.json ───────────────────────────────
+  property bool meetingActive: false
+  property bool meetingPaused: false
+  property double meetingRecordedMs: 0
+  property double stateUpdatedAt: 0
+  property double nowMs: Date.now()
 
-  // The bar slot sizes itself from these; both must be finite and >= 0.
-  readonly property bool vertical: bar ? bar.vertical === true : false
-  visible: !(hideWhenIdle && (phase === "idle" || offline))
-  implicitWidth: visible ? (vertical ? (bar ? bar.barSize : 24) : content.implicitWidth + 12) : 0
-  implicitHeight: visible ? (vertical ? content.implicitHeight + 12 : (bar ? bar.barSize : 24)) : 0
-
-  // ── parsing ───────────────────────────────────────────────────────────
-  // `walkie status` emits Waybar-shaped JSON: {text, alt, class, tooltip}.
-  // `class` is the stable field; `text` is a Nerd Font glyph we render as-is.
-  // Anything unparseable leaves the previous state alone rather than blanking
-  // the widget — a malformed line should never look like "Walkie crashed".
-  function apply(line) {
-    var raw = String(line || "").trim()
-    if (!raw) return
-    var data
-    try {
-      data = JSON.parse(raw)
-    } catch (e) {
-      return
-    }
-    if (!data || typeof data !== "object") return
-    retry.interval = retry.baseInterval
-    root.phase = String(data.class || data.alt || "stopped")
-    root.glyph = data.text ? String(data.text) : root.glyph
-    root.tip = data.tooltip ? String(data.tooltip) : "Walkie"
+  readonly property double meetingElapsedMs: {
+    if (!meetingActive) return 0
+    var base = meetingRecordedMs
+    if (!meetingPaused && stateUpdatedAt > 0)
+      base += Math.max(0, nowMs - stateUpdatedAt)
+    return base
+  }
+  function fmt(ms) {
+    var s = Math.max(0, Math.floor(ms / 1000))
+    return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
   }
 
-  // ── status stream ─────────────────────────────────────────────────────
+  readonly property string runtimeDir: (Quickshell.env("XDG_RUNTIME_DIR") || "") + "/walkie"
+
+  visible: !(hideWhenIdle && (phase === "idle" || offline) && !meetingActive)
+  implicitWidth: content.implicitWidth
+  implicitHeight: Math.max(fontSize + 6, content.implicitHeight)
+
+  // Waybar JSON: {text, alt, class, tooltip}. class carries the phase.
+  function apply(line) {
+    try {
+      var data = JSON.parse(line)
+      root.phase = String(data.class || data.alt || "stopped")
+    } catch (e) { /* keep prior state */ }
+  }
+
   Process {
     id: statusProc
     command: ["bash", "-lc", root.walkieCmd + " status --watch"]
-    running: false
-    stdout: SplitParser {
-      onRead: function (line) { root.apply(line) }
-    }
-    onExited: function (exitCode, exitStatus) {
-      // Reached when Walkie is not installed, the command errored, or the
-      // stream ended. NEVER respawn immediately: this runs inside the
-      // long-lived Omarchy shell process, and a hot restart loop on a missing
-      // binary would degrade the whole desktop.
-      if (!root.restartRequested) {
-        root.phase = "stopped"
-        root.glyph = root.micOffGlyph
-        root.tip = "Walkie is not running"
-        // Back off on repeated failure (missing binary, wrong `command`) so a
-        // permanently broken config settles at one probe a minute rather than
-        // twelve.
-        retry.interval = Math.min(retry.interval * 2, 60000)
-      } else {
-        root.restartRequested = false
-        retry.interval = retry.baseInterval
-      }
+    stdout: SplitParser { onRead: function (line) { if (line.trim().length) root.apply(line) } }
+    onExited: {
+      root.phase = "stopped"
+      if (!root.restartRequested) retry.interval = Math.min(retry.interval * 2, 60000)
+      else { root.restartRequested = false; retry.interval = retry.baseInterval }
       retry.restart()
     }
   }
-
   Timer {
     id: retry
     readonly property int baseInterval: 5000
-    interval: baseInterval
-    repeat: false
+    interval: baseInterval; repeat: false
     onTriggered: if (!statusProc.running) statusProc.running = true
   }
-
-  // Set while a restart is deliberate, so onExited treats the exit as
-  // requested rather than as a failure to back off from.
   property bool restartRequested: false
-
-  // Restart the stream if the user edits `command` in shell.json. Skipped
-  // during construction — Component.onCompleted does the initial start, and
-  // restarting a process that has not launched yet would be a no-op that
-  // leaves the widget dead.
   onWalkieCmdChanged: if (statusProc.running) refresh()
-
-  // Optional widget-contract hook; must not throw.
   function refresh() {
     retry.stop()
-    if (statusProc.running) {
-      // `running = false` only sends SIGTERM; the relaunch happens in
-      // onExited once the process has actually gone.
-      root.restartRequested = true
-      statusProc.running = false
-    } else {
-      retry.interval = retry.baseInterval
-      retry.restart()
+    if (statusProc.running) { root.restartRequested = true; statusProc.running = false }
+    else { retry.interval = retry.baseInterval; retry.restart() }
+  }
+  Component.onCompleted: statusProc.running = true
+  Component.onDestruction: { retry.stop(); statusProc.running = false }
+
+  // ── runtime-state.json: meeting fields ─────────────────────────────────
+  FileView {
+    path: root.runtimeDir + "/runtime-state.json"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: {
+      try {
+        var d = JSON.parse(text())
+        root.meetingActive = d.meeting_active === true
+        root.meetingPaused = d.meeting_paused === true
+        root.meetingRecordedMs = Number(d.meeting_recorded_ms || 0)
+        root.stateUpdatedAt = Number(d.updated_at || 0)
+      } catch (e) { /* ignore */ }
+    }
+    onLoadFailed: root.meetingActive = false
+  }
+
+  // ── levels file: live waveform bands (space-separated 0..100) ──────────
+  property var levels: []
+  property double levelsTs: 0
+  readonly property bool levelsFresh: (root.nowMs - levelsTs) < 400
+  FileView {
+    path: root.runtimeDir + "/levels"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: {
+      var parts = String(text()).trim().split(/\s+/)
+      var out = []
+      for (var i = 0; i < parts.length; i++) {
+        var n = Number(parts[i])
+        if (!isNaN(n)) out.push(Math.max(0, Math.min(100, n)))
+      }
+      root.levels = out
+      root.levelsTs = Date.now()
     }
   }
 
-  Component.onCompleted: statusProc.running = true
-  Component.onDestruction: {
-    retry.stop()
-    statusProc.running = false
-  }
+  Timer { interval: 1000; running: root.meetingActive; repeat: true; onTriggered: root.nowMs = Date.now() }
+  // A faster tick keeps the waveform's freshness check and the dot blink live.
+  Timer { interval: 120; running: root.meetingActive || root.dictating; repeat: true; onTriggered: root.nowMs = Date.now() }
 
   // ── presentation ──────────────────────────────────────────────────────
-  Row {
+  GridLayout {
     id: content
     anchors.centerIn: parent
-    spacing: 6
+    flow: root.vertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
+    rowSpacing: 5
+    columnSpacing: 7
 
+    // The Walkie mark — click opens Walkie full screen.
     Item {
       id: icon
-      anchors.verticalCenter: parent.verticalCenter
+      Layout.alignment: Qt.AlignCenter
       width: root.fontSize + 2
       height: root.fontSize + 2
-
-      readonly property color fill: root.bar ? root.bar.foreground : "white"
       readonly property real unit: width / 16.0
       readonly property real dot: 1.6 * unit
-
-      Rectangle {
-        anchors.centerIn: parent
-        width: icon.dot
-        height: icon.dot
-        radius: width / 2
-        color: icon.fill
-        antialiasing: true
-      }
-      Repeater {
-        model: 6
-        delegate: Rectangle {
-          required property int index
-          readonly property real angle: -Math.PI / 2 + index * Math.PI / 3
-          x: icon.width / 2 + 2.05 * icon.unit * Math.cos(angle) - width / 2
-          y: icon.height / 2 + 2.05 * icon.unit * Math.sin(angle) - height / 2
-          width: icon.dot
-          height: icon.dot
-          radius: width / 2
-          color: icon.fill
-          antialiasing: true
-        }
-      }
-      Repeater {
-        model: 12
-        delegate: Rectangle {
-          required property int index
-          readonly property real angle: -Math.PI / 2 + index * Math.PI / 6
-          x: icon.width / 2 + 4.1 * icon.unit * Math.cos(angle) - width / 2
-          y: icon.height / 2 + 4.1 * icon.unit * Math.sin(angle) - height / 2
-          width: icon.dot
-          height: icon.dot
-          radius: width / 2
-          color: icon.fill
-          antialiasing: true
-        }
-      }
-      Repeater {
-        model: 18
-        delegate: Rectangle {
-          required property int index
-          readonly property real angle: -Math.PI / 2 + index * Math.PI / 9
-          x: icon.width / 2 + 6.1 * icon.unit * Math.cos(angle) - width / 2
-          y: icon.height / 2 + 6.1 * icon.unit * Math.sin(angle) - height / 2
-          width: icon.dot
-          height: icon.dot
-          radius: width / 2
-          color: icon.fill
-          antialiasing: true
-        }
-      }
-
-      // Idle and offline recede; anything happening (or a hover) reads at
-      // full strength.
-      opacity: root.active || mouse.containsMouse ? 1.0 : (root.offline ? 0.35 : 0.6)
+      Rectangle { anchors.centerIn: parent; width: icon.dot; height: icon.dot; radius: width/2; color: root.fg; antialiasing: true }
+      Repeater { model: 6; delegate: Rectangle {
+        required property int index
+        readonly property real a: -Math.PI/2 + index*Math.PI/3
+        x: icon.width/2 + 2.05*icon.unit*Math.cos(a) - width/2
+        y: icon.height/2 + 2.05*icon.unit*Math.sin(a) - height/2
+        width: icon.dot; height: icon.dot; radius: width/2; color: root.fg; antialiasing: true } }
+      Repeater { model: 12; delegate: Rectangle {
+        required property int index
+        readonly property real a: -Math.PI/2 + index*Math.PI/6
+        x: icon.width/2 + 4.1*icon.unit*Math.cos(a) - width/2
+        y: icon.height/2 + 4.1*icon.unit*Math.sin(a) - height/2
+        width: icon.dot; height: icon.dot; radius: width/2; color: root.fg; antialiasing: true } }
+      Repeater { model: 18; delegate: Rectangle {
+        required property int index
+        readonly property real a: -Math.PI/2 + index*Math.PI/9
+        x: icon.width/2 + 6.1*icon.unit*Math.cos(a) - width/2
+        y: icon.height/2 + 6.1*icon.unit*Math.sin(a) - height/2
+        width: icon.dot; height: icon.dot; radius: width/2; color: root.fg; antialiasing: true } }
+      opacity: (root.meetingActive || root.dictating || iconMouse.containsMouse) ? 1.0 : (root.offline ? 0.35 : 0.6)
       Behavior on opacity { NumberAnimation { duration: 150 } }
-
-      // A slow breath while the mic is open — the one state worth noticing
-      // from across the room. Stops completely otherwise, so an idle bar
-      // costs nothing.
-      SequentialAnimation on scale {
-        running: root.phase === "recording"
-        loops: Animation.Infinite
-        alwaysRunToEnd: true
-        NumberAnimation { to: 1.15; duration: 650; easing.type: Easing.InOutQuad }
-        NumberAnimation { to: 1.0; duration: 650; easing.type: Easing.InOutQuad }
+      MouseArea {
+        id: iconMouse
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        function launch(cmd) {
+          if (root.bar && typeof root.bar.run === "function") root.bar.run(cmd)
+          else Quickshell.execDetached(["bash", "-lc", cmd])
+        }
+        onClicked: launch(root.walkieCmd + " --open-fullscreen")
       }
-      onVisibleChanged: if (!visible) scale = 1.0
     }
 
-    Text {
-      // Shown on hover too: where the host has no tooltip API, hover
-      // still answers "what is Walkie doing" inline (Adam, 2026-09-06).
-      visible: (root.showLabel || mouse.containsMouse) && root.phase !== "idle" && !root.offline
-      anchors.verticalCenter: parent.verticalCenter
-      text: root.phase
-      color: root.bar ? root.bar.foreground : "white"
-      font.family: root.fontFamily
-      font.pixelSize: root.fontSize
-      opacity: 0.8
-    }
-  }
-
-  // ── interaction ───────────────────────────────────────────────────────
-  MouseArea {
-    id: mouse
-    anchors.fill: parent
-    hoverEnabled: true
-    cursorShape: Qt.PointingHandCursor
-    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-
-    // Left  — open the Walkie panel (timer, last dictation with copy,
-    //         actions), like Omarchy's own widgets: left click opens a
-    //         panel, never fires state changes. Shells without the panel
-    //         summon path fall back to opening Walkie itself.
-    // Right — toggle dictation (start, then stop and transcribe)
-    // Middle— cancel whatever is running
-    // Not every Omarchy shell injects bar.run — where it was missing the
-    // old guard made every click a SILENT no-op (Adam, 2026-09-06).
-    // Quickshell.execDetached is the version-stable fallback; bar.run
-    // stays first preference so host niceties keep working where present.
-    function launch(cmd) {
-      if (root.bar && typeof root.bar.run === "function") root.bar.run(cmd)
-      else Quickshell.execDetached(["bash", "-lc", cmd])
-    }
-    onClicked: function (mouse) {
-      // Walkie not running: every button just launches it. Toggling a
-      // recorder that isn't there did nothing and read as broken
-      // (Adam, 2026-09-03).
-      if (root.offline) { launch(root.walkieCmd); return }
-      if (mouse.button === Qt.RightButton) launch(root.walkieCmd + " --toggle-transcription")
-      else if (mouse.button === Qt.MiddleButton) launch(root.walkieCmd + " --cancel")
-      else Quickshell.execDetached(["bash", "-lc",
-        "omarchy-shell shell toggle com.b150.walkie '" +
-        JSON.stringify({ command: root.walkieCmd }) +
-        "' 2>/dev/null || " + root.walkieCmd])
+    // Dictation: a single blinking orange dot.
+    Rectangle {
+      Layout.alignment: Qt.AlignCenter
+      visible: root.dictating && !root.meetingActive
+      width: 8; height: 8; radius: 4; color: root.accent
+      SequentialAnimation on opacity {
+        running: root.dictating && !root.meetingActive
+        loops: Animation.Infinite; alwaysRunToEnd: true
+        NumberAnimation { to: 0.25; duration: 500 }
+        NumberAnimation { to: 1.0; duration: 500 }
+      }
     }
 
-    onEntered: if (root.bar && typeof root.bar.showTooltip === "function") root.bar.showTooltip(root, root.tip)
-    onExited: if (root.bar && typeof root.bar.hideTooltip === "function") root.bar.hideTooltip(root)
+    // Meeting: live waveform + timer + play/pause. Stacks on a vertical bar,
+    // and the timer text drops (icon-only convention) so it fits 28px.
+    GridLayout {
+      Layout.alignment: Qt.AlignCenter
+      visible: root.meetingActive
+      flow: root.vertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
+      rowSpacing: 4
+      columnSpacing: 6
+
+      Row {
+        Layout.alignment: Qt.AlignCenter
+        spacing: 2
+        Repeater {
+          model: root.vertical ? 5 : 9
+          delegate: Rectangle {
+            required property int index
+            readonly property int count: root.vertical ? 5 : 9
+            readonly property int mid: Math.floor(count / 2)
+            readonly property int band: Math.round(
+              (Math.abs(index - mid) / mid) * (root.levels.length - 1))
+            readonly property real v: (root.meetingPaused || !root.levelsFresh || root.levels.length === 0)
+              ? 0 : (root.levels[band] || 0) / 100
+            width: 2
+            radius: 1
+            height: Math.max(2, v * (root.fontSize + 2))
+            anchors.verticalCenter: parent.verticalCenter
+            color: root.fg
+            opacity: 0.9
+            Behavior on height { NumberAnimation { duration: 90; easing.type: Easing.OutQuad } }
+          }
+        }
+      }
+
+      Text {
+        Layout.alignment: Qt.AlignCenter
+        visible: !root.vertical
+        text: root.fmt(root.meetingElapsedMs)
+        color: root.fg
+        font.family: root.fontFamily
+        font.pixelSize: root.fontSize
+      }
+
+      Item {
+        Layout.alignment: Qt.AlignCenter
+        width: root.fontSize; height: root.fontSize
+        Row {
+          anchors.centerIn: parent
+          spacing: 2
+          visible: !root.meetingPaused
+          Rectangle { width: 2; height: root.fontSize*0.7; radius: 1; color: root.fg }
+          Rectangle { width: 2; height: root.fontSize*0.7; radius: 1; color: root.fg }
+        }
+        Canvas {
+          anchors.centerIn: parent
+          width: root.fontSize*0.8; height: root.fontSize*0.8
+          visible: root.meetingPaused
+          onPaint: {
+            var ctx = getContext("2d"); ctx.reset()
+            ctx.fillStyle = root.fg
+            ctx.beginPath(); ctx.moveTo(1, 0); ctx.lineTo(width-1, height/2); ctx.lineTo(1, height); ctx.closePath(); ctx.fill()
+          }
+        }
+        MouseArea {
+          anchors.fill: parent
+          anchors.margins: -3
+          cursorShape: Qt.PointingHandCursor
+          onClicked: {
+            var cmd = root.walkieCmd + " --toggle-meeting-pause"
+            if (root.bar && typeof root.bar.run === "function") root.bar.run(cmd)
+            else Quickshell.execDetached(["bash", "-lc", cmd])
+          }
+        }
+      }
+    }
   }
 }

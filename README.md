@@ -2,8 +2,8 @@
 
 Dictation and meeting status for [Walkie](https://trywalkie.com), as an
 [Omarchy](https://omarchy.org) shell plugin: the Walkie mark sits in your bar,
-shows whether Walkie is idle, recording, transcribing or in a meeting, and a
-click starts dictation without touching the keyboard.
+shows a blinking dot while you dictate and a live waveform, timer, and
+play/pause while a meeting records. Click the mark to open Walkie full screen.
 
 ## Requires the Walkie app
 
@@ -58,14 +58,17 @@ omarchy plugin remove com.b150.walkie
 
 ## What it does
 
-| Action | Result |
-| --- | --- |
-| Left click | Open / focus the Walkie window |
-| Right click | Toggle dictation (start, then stop and transcribe) |
-| Middle click | Cancel the current recording |
+The mark is always there — click it to open Walkie full screen. A status
+strip appears beside it only while something is happening:
 
-While recording, the mark breathes slowly. Idle recedes; a dead or missing
-Walkie shows a muted mic and any click launches the app.
+| State | Shows |
+| --- | --- |
+| Dictating | A blinking orange dot |
+| Meeting recording | A live audio waveform, a running timer, and a play/pause button (click to pause/resume) |
+| Idle | Nothing but the mark |
+
+On a left or right (vertical) bar the strip stacks and folds to a compact
+form. A dead or missing Walkie dims the mark.
 
 ## Settings
 
@@ -75,7 +78,6 @@ Configure from the bar's widget settings (or `~/.config/omarchy/shell.json`):
 | --- | --- | --- |
 | `command` | `walkie` | Executable for status and actions — absolute path for AppImage installs |
 | `hideWhenIdle` | `false` | Only occupy bar space while recording or working |
-| `showLabel` | `false` | Print the state name next to the icon |
 | `fontFamily` | inherit | Override the bar font for status glyphs |
 | `fontSize` | `14` | Icon size in pixels |
 

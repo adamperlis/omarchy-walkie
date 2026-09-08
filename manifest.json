@@ -2,21 +2,19 @@
   "schemaVersion": 1,
   "id": "com.b150.walkie",
   "name": "Walkie",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "author": "B150",
   "license": "MIT",
-  "description": "Dictation and meeting status for Walkie. Click opens the Walkie panel \u2014 live timer, last dictation with one-click copy, and actions; right-click dictates.",
+  "description": "Walkie status for the Omarchy bar: a Walkie mark that opens the app full screen, a blinking dot while dictating, and a live waveform + timer + play/pause while a meeting records.",
   "kinds": [
-    "bar-widget",
-    "panel"
+    "bar-widget"
   ],
   "entryPoints": {
-    "barWidget": "BarWidget.qml",
-    "panel": "Panel.qml"
+    "barWidget": "BarWidget.qml"
   },
   "barWidget": {
     "displayName": "Walkie",
-    "description": "Walkie status \u2014 click for the panel, right-click to dictate",
+    "description": "Walkie status \u2014 click opens Walkie; live meeting waveform + play/pause",
     "category": "Audio",
     "allowMultiple": false,
     "defaultSection": "right",
