@@ -2,17 +2,19 @@
   "schemaVersion": 1,
   "id": "com.b150.walkie",
   "name": "Walkie",
-  "version": "3.4.0",
+  "version": "3.5.0",
   "author": "B150",
   "license": "MIT",
   "description": "Walkie status for the Omarchy bar: a Walkie mark that opens the app full screen, a blinking dot while dictating, and a live waveform + timer + play/pause while a meeting records.",
-  "kinds": ["bar-widget"],
+  "kinds": [
+    "bar-widget"
+  ],
   "entryPoints": {
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
     "displayName": "Walkie",
-    "description": "Walkie status — click opens Walkie; live meeting waveform + play/pause",
+    "description": "Walkie status \u2014 click opens Walkie; live meeting waveform + play/pause",
     "category": "Audio",
     "allowMultiple": false,
     "defaultSection": "right",
@@ -29,7 +31,7 @@
         "key": "command",
         "type": "string",
         "label": "Walkie command",
-        "description": "Executable used for status and actions. Use an absolute path for an AppImage install.",
+        "description": "Executable used for status and actions \u2014 an absolute path, or a bare program name found on PATH. It is run directly, never through a shell, so a command line with arguments or shell syntax is ignored.",
         "defaultValue": "walkie"
       },
       {

@@ -33,7 +33,37 @@ Item {
     var value = settings ? settings[name] : undefined
     return (value === undefined || value === null) ? fallback : value
   }
-  readonly property string walkieCmd: String(setting("command", "walkie"))
+  // ── Launching, without a shell ─────────────────────────────────────────
+  // Nothing here builds a shell string. `next_meeting_link` originates in a
+  // Google Calendar event, so anyone who can send an invite controls it, and
+  // running it through `bash -lc` made $(…) and backticks executable even
+  // inside JSON.stringify's double quotes — JSON quoting is not shell
+  // escaping (HANCORE-linux, omarchy-plugin-marketplace#4804, 2026-09-09).
+  //
+  // `command` is a program, not a command line: an absolute path, or a bare
+  // name QProcess resolves on PATH. Anything carrying shell syntax is refused
+  // outright rather than quoted, because quoting is what failed before.
+  readonly property string walkieCmd: {
+    var raw = String(setting("command", "walkie")).trim()
+    return /^(\/[A-Za-z0-9._+\-\/]+|[A-Za-z0-9._+\-]+)$/.test(raw) ? raw : "walkie"
+  }
+
+  // Meeting links are launched as argv, and only when they are plainly https.
+  // Google Meet, Zoom and Teams invites all publish https join URLs; a native
+  // scheme (zoommtg:, msteams:) would have to be added here deliberately.
+  function openLink(url) {
+    var u = String(url)
+    if (!/^https:\/\/[^\s"'`$\\|;&<>()]+$/.test(u)) {
+      console.warn("walkie: refusing to open a meeting link that is not a plain https URL")
+      return
+    }
+    Quickshell.execDetached(["/usr/bin/xdg-open", u])
+  }
+
+  // One place that runs Walkie, argv only — no bar.run(), which takes shell text.
+  function runWalkie(args) {
+    Quickshell.execDetached([root.walkieCmd].concat(args))
+  }
   readonly property bool hideWhenIdle: setting("hideWhenIdle", false) === true
   readonly property string fontFamily: {
     var chosen = String(setting("fontFamily", ""))
@@ -60,12 +90,25 @@ Item {
   // both the same number and the mark reads far bigger than the glyphs
   // beside it, which is exactly how it looked (Adam, 2026-09-09).
   //
-  // Tunable live, because getting this exactly right is an eyeball job and a
-  // release round trip is a poor way to do it:
-  //   omarchy bar set com.b150.walkie markScale 0.45
+  // 0.44 of a 26px bar is ~11px, and that is not a guess. The rings drawn
+  // below (1 + 6 + 12 + 18 = 37 dots, dot radius 0.82 in a 16-unit box) are
+  // the brand's NANO mark — see WalkieMark.tsx, whose four tiers run
+  // full/131 dots/r0.32, slim/93/r0.48, micro/61/r0.62, nano/37/r0.82, and
+  // whose pickWalkieMarkVariant reserves nano for sizes UNDER 12px. Nano's
+  // dots are proportionally 2.5x fatter than the full mark's, so drawn at
+  // 18px it read heavy rather than merely large (Adam, 2026-09-09). At 11px
+  // its ink lands on ~9.5px, which is where a 14px glyph's ink sits too.
+  //
+  // Drawing it BIGGER would mean porting the finer tiers' geometry into QML
+  // rather than generating rings procedurally; until then, nano at nano's
+  // size is the honest option.
+  //
+  // Tunable live all the same, because this is ultimately an eyeball job and
+  // a release round trip is a poor way to do it:
+  //   omarchy bar set com.b150.walkie markScale 0.5
   readonly property real markScale: {
     var v = Number(setting("markScale", 0))
-    return (v >= 0.2 && v <= 1.0) ? v : 0.5
+    return (v >= 0.2 && v <= 1.0) ? v : 0.44
   }
   readonly property int markSize: Math.max(8, Math.round(root.barSize * root.markScale))
   // Mirror the bar's icon colour. `bar.foreground` is the live value the shell
@@ -164,7 +207,7 @@ Item {
 
   Process {
     id: statusProc
-    command: ["bash", "-lc", root.walkieCmd + " status --watch"]
+    command: [root.walkieCmd, "status", "--watch"]
     stdout: SplitParser { onRead: function (line) { if (line.trim().length) root.apply(line) } }
     onExited: {
       root.phase = "stopped"
@@ -259,11 +302,7 @@ Item {
     anchors.fill: parent
     hoverEnabled: true
     cursorShape: Qt.PointingHandCursor
-    function launch(cmd) {
-      if (root.bar && typeof root.bar.run === "function") root.bar.run(cmd)
-      else Quickshell.execDetached(["bash", "-lc", cmd])
-    }
-    onClicked: launch(root.walkieCmd + " --open-fullscreen")
+    onClicked: root.runWalkie(["--open-fullscreen"])
   }
 
   // ── presentation ──────────────────────────────────────────────────────
@@ -341,9 +380,7 @@ Item {
           ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: {
           if (!root.nextMeetingLink.length) return
-          var cmd = "xdg-open " + JSON.stringify(root.nextMeetingLink)
-          if (root.bar && typeof root.bar.run === "function") root.bar.run(cmd)
-          else Quickshell.execDetached(["bash", "-lc", cmd])
+          root.openLink(root.nextMeetingLink)
         }
       }
     }
@@ -449,9 +486,7 @@ Item {
           anchors.margins: -3
           cursorShape: Qt.PointingHandCursor
           onClicked: {
-            var cmd = root.walkieCmd + " --toggle-meeting-pause"
-            if (root.bar && typeof root.bar.run === "function") root.bar.run(cmd)
-            else Quickshell.execDetached(["bash", "-lc", cmd])
+            root.runWalkie(["--toggle-meeting-pause"])
           }
         }
       }
