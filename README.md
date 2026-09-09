@@ -78,8 +78,10 @@ Configure from the bar's widget settings (or `~/.config/omarchy/shell.json`):
 | --- | --- | --- |
 | `command` | `walkie` | Executable for status and actions — absolute path for AppImage installs |
 | `hideWhenIdle` | `false` | Only occupy bar space while recording or working |
+| `showLabel` | `false` | Print the state name next to the icon |
 | `fontFamily` | inherit | Override the bar font for status glyphs |
-| `fontSize` | `14` | Icon size in pixels |
+| `fontSize` | `0` | Size of the meeting timer and next-meeting text, in pixels. `0` follows the bar |
+| `markScale` | `0` | How much of the bar's height the Walkie mark fills, `0.2`–`1.0`. `0` uses the default (`0.5`) |
 
 ## A dictation hotkey to go with it
 

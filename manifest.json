@@ -2,19 +2,17 @@
   "schemaVersion": 1,
   "id": "com.b150.walkie",
   "name": "Walkie",
-  "version": "3.0.0",
+  "version": "3.4.0",
   "author": "B150",
   "license": "MIT",
   "description": "Walkie status for the Omarchy bar: a Walkie mark that opens the app full screen, a blinking dot while dictating, and a live waveform + timer + play/pause while a meeting records.",
-  "kinds": [
-    "bar-widget"
-  ],
+  "kinds": ["bar-widget"],
   "entryPoints": {
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
     "displayName": "Walkie",
-    "description": "Walkie status \u2014 click opens Walkie; live meeting waveform + play/pause",
+    "description": "Walkie status — click opens Walkie; live meeting waveform + play/pause",
     "category": "Audio",
     "allowMultiple": false,
     "defaultSection": "right",
@@ -23,7 +21,8 @@
       "hideWhenIdle": false,
       "showLabel": false,
       "fontFamily": "",
-      "fontSize": 18
+      "fontSize": 0,
+      "markScale": 0
     },
     "schema": [
       {
@@ -57,11 +56,20 @@
       {
         "key": "fontSize",
         "type": "integer",
-        "label": "Font size",
-        "description": "Icon size in pixels.",
-        "defaultValue": 18,
-        "min": 8,
+        "label": "Text size",
+        "description": "Size of the meeting timer and next-meeting text, in pixels. 0 follows the bar. The Walkie mark has its own setting.",
+        "defaultValue": 0,
+        "min": 0,
         "max": 48
+      },
+      {
+        "key": "markScale",
+        "type": "number",
+        "label": "Mark size",
+        "description": "How much of the bar's height the Walkie mark fills, 0.2-1.0. 0 uses the default (0.5). Raise it if the mark reads small next to your other icons, lower it if it reads large.",
+        "defaultValue": 0,
+        "min": 0,
+        "max": 1
       }
     ]
   }
