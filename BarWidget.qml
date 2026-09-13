@@ -29,6 +29,10 @@ Item {
   property string moduleName: ""
   property var settings: ({})
 
+  // Where the walkie-bin package installs the binary. A distribution that
+  // puts it elsewhere sets `command` to its own absolute path.
+  readonly property string DEFAULT_WALKIE: "/usr/bin/walkie"
+
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
     return (value === undefined || value === null) ? fallback : value
@@ -40,12 +44,30 @@ Item {
   // inside JSON.stringify's double quotes — JSON quoting is not shell
   // escaping (HANCORE-linux, omarchy-plugin-marketplace#4804, 2026-09-09).
   //
-  // `command` is a program, not a command line: an absolute path, or a bare
-  // name QProcess resolves on PATH. Anything carrying shell syntax is refused
-  // outright rather than quoted, because quoting is what failed before.
+  // `command` is a program, not a command line, and it is an ABSOLUTE PATH —
+  // never a bare name.
+  //
+  // A bare name is resolved by QProcess through the inherited PATH, so anything
+  // earlier on PATH called `walkie` becomes the long-lived status producer and
+  // receives every control action this widget sends. An unprivileged local
+  // process can cross that boundary by dropping a file in ~/.local/bin
+  // (HANCORE-linux, omarchy-plugin-marketplace#4804, 2026-09-10).
+  //
+  // So there is no code path to a bare name. A `command` that is not a clean
+  // absolute path is refused and the packaged absolute path is used instead —
+  // closed against PATH, which is the boundary being defended. Whether
+  // /usr/bin/walkie is itself the real binary is the package manager's
+  // guarantee, not this widget's.
   readonly property string walkieCmd: {
-    var raw = String(setting("command", "walkie")).trim()
-    return /^(\/[A-Za-z0-9._+\-\/]+|[A-Za-z0-9._+\-]+)$/.test(raw) ? raw : "walkie"
+    var raw = String(setting("command", DEFAULT_WALKIE)).trim()
+    // Absolute, no traversal, no shell metacharacters. `..` is rejected
+    // outright rather than normalised, because normalising is the kind of
+    // cleverness this file has already been burned by once.
+    if (!/^\/[A-Za-z0-9._+\-\/]+$/.test(raw) || raw.indexOf("/..") !== -1) {
+      if (raw !== "") console.warn("walkie: ignoring `command` — it must be an absolute path")
+      return DEFAULT_WALKIE
+    }
+    return raw
   }
 
   // Meeting links are launched as argv, and only when they are plainly https.
