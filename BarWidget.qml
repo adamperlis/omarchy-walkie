@@ -33,6 +33,40 @@ Item {
   // puts it elsewhere sets `command` to its own absolute path.
   readonly property string DEFAULT_WALKIE: "/usr/bin/walkie"
 
+  // ── Bounds on everything that crosses a trust boundary ──────────────────
+  // `next_meeting` is a Google Calendar event title, so anyone who can send
+  // the user an invite controls it, and it arrives here through Walkie's
+  // runtime-state.json. The same reach that made shell quoting unsafe in
+  // 3.5.0 applies to every other sink: a QML `Text` defaults to
+  // `Text.AutoText`, which sniffs markup and will fetch a remote `<img src>`
+  // from the persistent shell, and an unbounded string or array read on a
+  // long-lived widget is an allocation an attacker picks the size of
+  // (HANCORE-linux, omarchy-plugin-marketplace#4804, 2026-09-13).
+  //
+  // Every ceiling below is far above anything Walkie legitimately produces —
+  // runtime-state.json is a few hundred bytes, a status line a few dozen —
+  // so these reject abuse without ever truncating real output.
+  readonly property int MAX_TEXT: 200
+  readonly property int MAX_JSON: 65536
+  readonly property int MAX_LINE: 8192
+  readonly property int MAX_LEVELS: 256
+
+  // One line of plain text, capped. Control characters are stripped as well
+  // as length capped: this lands in a single-line bar label, and a stray
+  // newline or escape belongs in neither.
+  function boundedText(v) {
+    if (typeof v !== "string") return ""
+    return v.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, root.MAX_TEXT)
+  }
+
+  // A finite, non-negative number inside `max`, or 0. Rejects NaN, Infinity
+  // and overflow rather than letting them reach a layout or a duration.
+  function boundedNum(v, max) {
+    var n = Number(v)
+    if (!isFinite(n) || n < 0 || n > max) return 0
+    return n
+  }
+
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
     return (value === undefined || value === null) ? fallback : value
@@ -223,14 +257,22 @@ Item {
   function apply(line) {
     try {
       var data = JSON.parse(line)
-      root.phase = String(data.class || data.alt || "stopped")
+      if (!data || typeof data !== "object") return
+      root.phase = root.boundedText(data.class || data.alt || "stopped")
     } catch (e) { /* keep prior state */ }
   }
 
   Process {
     id: statusProc
     command: [root.walkieCmd, "status", "--watch"]
-    stdout: SplitParser { onRead: function (line) { if (line.trim().length) root.apply(line) } }
+    // Bounded per line: this parser is attached for the life of the widget,
+    // so an unbounded line is an unbounded allocation.
+    stdout: SplitParser {
+      onRead: function (line) {
+        if (typeof line !== "string" || line.length > root.MAX_LINE) return
+        if (line.trim().length) root.apply(line)
+      }
+    }
     onExited: {
       root.phase = "stopped"
       if (!root.restartRequested) retry.interval = Math.min(retry.interval * 2, 60000)
@@ -262,13 +304,20 @@ Item {
     onFileChanged: reload()
     onLoaded: {
       try {
-        var d = JSON.parse(text())
+        var raw = text()
+        // Ceiling BEFORE parsing: JSON.parse on an oversized file allocates
+        // first and fails second. Real state is a few hundred bytes.
+        if (typeof raw !== "string" || raw.length > root.MAX_JSON) return
+        var d = JSON.parse(raw)
+        if (!d || typeof d !== "object") return
         root.meetingActive = d.meeting_active === true
         root.meetingPaused = d.meeting_paused === true
-        root.meetingRecordedMs = Number(d.meeting_recorded_ms || 0)
-        root.stateUpdatedAt = Number(d.updated_at || 0)
-        root.nextMeeting = String(d.next_meeting || "")
-        root.nextMeetingLink = String(d.next_meeting_link || "")
+        // A day of recording, and a year of epoch milliseconds.
+        root.meetingRecordedMs = root.boundedNum(d.meeting_recorded_ms, 86400000)
+        root.stateUpdatedAt = root.boundedNum(d.updated_at, 4102444800000)
+        root.nextMeeting = root.boundedText(d.next_meeting)
+        // Capped here as well as validated as plain https at launch.
+        root.nextMeetingLink = root.boundedText(d.next_meeting_link)
       } catch (e) { /* ignore */ }
     }
     onLoadFailed: { root.meetingActive = false; root.nextMeeting = "" }
@@ -284,11 +333,16 @@ Item {
     printErrors: false
     onFileChanged: reload()
     onLoaded: {
-      var parts = String(text()).trim().split(/\s+/)
+      var raw = text()
+      if (typeof raw !== "string" || raw.length > root.MAX_LINE) return
+      var parts = String(raw).trim().split(/\s+/)
       var out = []
-      for (var i = 0; i < parts.length; i++) {
+      // Stop at MAX_LEVELS rather than reading the file's word count: the
+      // waveform draws a few dozen bands and cannot use more.
+      var limit = Math.min(parts.length, root.MAX_LEVELS)
+      for (var i = 0; i < limit; i++) {
         var n = Number(parts[i])
-        if (!isNaN(n)) out.push(Math.max(0, Math.min(100, n)))
+        if (isFinite(n)) out.push(Math.max(0, Math.min(100, n)))
       }
       root.levels = out
       root.levelsTs = Date.now()
@@ -386,6 +440,10 @@ Item {
       Layout.maximumWidth: 220
       visible: root.showNext && !root.vertical
       text: root.nextMeeting
+      // PLAIN TEXT, always. The default is Text.AutoText, which sniffs markup
+      // and would render an invite-controlled fragment — including fetching
+      // a remote <img src> from the user's shell.
+      textFormat: Text.PlainText
       elide: Text.ElideRight
       color: root.fg
       font.family: root.fontFamily
@@ -478,6 +536,7 @@ Item {
         Layout.alignment: Qt.AlignCenter
         visible: !root.vertical
         text: root.fmt(root.meetingElapsedMs)
+        textFormat: Text.PlainText
         color: root.fg
         font.family: root.fontFamily
         font.pixelSize: root.fontSize
