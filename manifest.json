@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "com.b150.walkie",
   "name": "Walkie",
-  "version": "3.5.0",
+  "version": "3.5.1",
   "author": "B150",
   "license": "MIT",
   "description": "Walkie status for the Omarchy bar: a Walkie mark that opens the app full screen, a blinking dot while dictating, and a live waveform + timer + play/pause while a meeting records.",
